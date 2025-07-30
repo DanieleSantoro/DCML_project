@@ -1,15 +1,16 @@
 import pandas as pd
 import torch
 import torch.nn as nn
+import numpy as np
+import glob
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from RNN import KeystrokeRNN  # assicurati che questo file contenga la classe KeystrokeRNN
 
-# === Dataset per PyTorch ===
 class KeystrokeDataset(Dataset):
     def __init__(self, sequences, labels):
-        self.sequences = torch.tensor(sequences, dtype=torch.float32)
+        self.sequences = torch.tensor(np.array(sequences), dtype=torch.float32)
         self.labels = torch.tensor(labels, dtype=torch.long)
 
     def __len__(self):
@@ -18,7 +19,6 @@ class KeystrokeDataset(Dataset):
     def __getitem__(self, idx):
         return self.sequences[idx], self.labels[idx]
 
-# === Funzione per creare le sequenze ===
 def create_sequences(features_df, labels_series, seq_length=10):
     sequences = []
     labels_out = []
@@ -35,13 +35,18 @@ def create_sequences(features_df, labels_series, seq_length=10):
 
     return sequences, labels_out
 
-# === MAIN ===
 def main():
-    # 1. Caricamento dati
-    df = pd.read_csv("dataset/features_dataset.csv")
+    folder = "processed_dataset"
+    all_files = glob.glob(f"{folder}/*.csv")
+
+    dfs = []
+    for file in all_files:
+        df_tmp = pd.read_csv(file)
+        dfs.append(df_tmp)
+
+    df = pd.concat(dfs, ignore_index=True)
     print("Dataset shape:", df.shape)
 
-    # 2. Preprocessing
     features = df.drop(columns=["label"])
     labels = df["label"]
 
@@ -51,14 +56,12 @@ def main():
     le = LabelEncoder()
     labels = pd.Series(le.fit_transform(labels))
 
-    # 3. Sequenze
-    sequences, seq_labels = create_sequences(features, labels, seq_length=3)
+    sequences, seq_labels = create_sequences(features, labels, seq_length=2)
 
     print("Num sequences:", len(sequences))
     if sequences:
         print("Example sequence shape:", len(sequences[0]), "x", len(sequences[0][0]))
 
-    # 4. Train-test split
     X_train, X_test, y_train, y_test = train_test_split(sequences, seq_labels, test_size=0.2, random_state=42)
 
     train_dataset = KeystrokeDataset(X_train, y_train)
@@ -67,7 +70,6 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=16)
 
-    # 5. RNN
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     input_size = len(features.columns)
     model = KeystrokeRNN(input_size=input_size).to(device)
@@ -75,7 +77,6 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    # 6. Training
     epochs = 15
     for epoch in range(epochs):
         model.train()
@@ -93,7 +94,6 @@ def main():
 
         print(f"Epoch [{epoch+1}/{epochs}], Loss: {running_loss:.4f}")
 
-    # 7. Valutazione
     model.eval()
     correct = 0
     total = 0
@@ -105,8 +105,9 @@ def main():
             total += y_batch.size(0)
             correct += (predicted == y_batch).sum().item()
 
-    accuracy = 100 * correct / total
+    accuracy = 100 * correct / total if total > 0 else 0
     print(f"Test Accuracy: {accuracy:.2f}%")
 
 if __name__ == "__main__":
     main()
+
