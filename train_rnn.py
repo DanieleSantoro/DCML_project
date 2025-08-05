@@ -6,7 +6,10 @@ import glob
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
-from RNN import KeystrokeRNN  # assicurati che questo file contenga la classe KeystrokeRNN
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+from RNN import KeystrokeRNN
 
 class KeystrokeDataset(Dataset):
     def __init__(self, sequences, labels):
@@ -77,6 +80,8 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+    best_accuracy = 0
+
     epochs = 15
     for epoch in range(epochs):
         model.train()
@@ -94,20 +99,51 @@ def main():
 
         print(f"Epoch [{epoch+1}/{epochs}], Loss: {running_loss:.4f}")
 
+        # Valutazione parziale su test set (facoltativa)
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for X_batch, y_batch in test_loader:
+                X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+                outputs = model(X_batch)
+                _, predicted = torch.max(outputs.data, 1)
+                total += y_batch.size(0)
+                correct += (predicted == y_batch).sum().item()
+        accuracy = 100 * correct / total if total > 0 else 0
+        print(f"Test Accuracy after epoch {epoch+1}: {accuracy:.2f}%")
+
+        # Salva il miglior modello
+        if accuracy > best_accuracy:
+            best_accuracy = accuracy
+            torch.save(model.state_dict(), "best_rnn_model.pt")
+            print(f"Modello salvato con accuratezza {best_accuracy:.2f}%")
+
+    # Valutazione finale e confusion matrix
+    model.load_state_dict(torch.load("best_rnn_model.pt"))
     model.eval()
-    correct = 0
-    total = 0
+    all_preds = []
+    all_labels = []
     with torch.no_grad():
         for X_batch, y_batch in test_loader:
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             outputs = model(X_batch)
             _, predicted = torch.max(outputs.data, 1)
-            total += y_batch.size(0)
-            correct += (predicted == y_batch).sum().item()
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(y_batch.cpu().numpy())
 
-    accuracy = 100 * correct / total if total > 0 else 0
-    print(f"Test Accuracy: {accuracy:.2f}%")
+    accuracy = 100 * np.sum(np.array(all_preds) == np.array(all_labels)) / len(all_labels)
+    print(f"\nFinal Test Accuracy: {accuracy:.2f}%")
+
+    cm = confusion_matrix(all_labels, all_preds)
+    print("Confusion Matrix:")
+    print(cm)
+
+    sns.heatmap(cm, annot=True, fmt='d', xticklabels=le.classes_, yticklabels=le.classes_)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.title('Confusion Matrix')
+    plt.show()
 
 if __name__ == "__main__":
     main()
-
