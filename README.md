@@ -59,7 +59,7 @@ pip install -r requirements.txt
 
 # You can predict data
 
-8) python predict.py --input_file features.csv --model_path model.pkl
+8) python predict.py --input_file dataset/features.csv --model_path model.pkl
 
  
 
